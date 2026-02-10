@@ -8,6 +8,12 @@ config();
 
 export let manager: LavalinkManager;
 
+// Store vote-to-skip data per guild
+export const skipVotes = new Map<string, Set<string>>();
+
+// Track which guilds just skipped to avoid duplicate "Now Playing" messages
+const skipFlags = new Map<string, boolean>();
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -21,7 +27,7 @@ const client = new Client({
     console.log(`✅ Bot is ready! Logged in as ${client.user?.tag}`);
     
     // Initialize Lavalink
-    manager = createLavalinkManager(client);
+    manager = createLavalinkManager(client, skipFlags);
     manager.init({ id: client.user!.id, username: client.user!.username });
     
     registerCommands(client);
@@ -38,7 +44,7 @@ const client = new Client({
     if (!guildId) return;
     
     try {
-      let player;
+      let player: any;
       
       switch (commandName) {
         case 'play':
@@ -68,10 +74,8 @@ const client = new Client({
           // Search and play
           const res = await player.search({ query }, interaction.user);
           
-          console.log('Search result:', JSON.stringify(res, null, 2));
-          
           if (!res || !res.tracks || res.tracks.length === 0) {
-            await interaction.editReply(`❌ No results found! Load type: ${res?.loadType || 'unknown'}`);
+            await interaction.editReply(`❌ No results found!`);
             return;
           }
 
@@ -86,14 +90,65 @@ const client = new Client({
           if (!player.playing) await player.play();
           break;
 
-        case 'skip':
+        case 'vote':
           player = manager.getPlayer(guildId);
           if (!player || !player.queue.current) {
             await interaction.reply('❌ Nothing is playing!');
             return;
           }
-          await player.skip();
-          await interaction.reply('⏭️ Skipped!');
+
+          const voteMember = interaction.member as any;
+          const voteChannel = voteMember?.voice?.channel;
+
+          if (!voteChannel) {
+            await interaction.reply('❌ You need to be in the voice channel to skip!');
+            return;
+          }
+
+          const listeners = voteChannel.members.filter((m: any) => !m.user.bot).size;
+
+          // Auto-skip if 1-2 people (no voting needed)
+          if (listeners <= 2) {
+            if (player.queue.tracks.length === 0) {
+              await interaction.reply(`⏭️ Skipped! Queue is empty, stopping playback.`);
+              await player.destroy();
+            } else {
+              skipFlags.set(guildId, true);
+              await player.skip();
+              await interaction.reply(`⏭️ Skipped!`);
+            }
+            return;
+          }
+
+          // 3+ people: need 2 votes
+          if (!skipVotes.has(guildId)) {
+            skipVotes.set(guildId, new Set());
+          }
+          const votes = skipVotes.get(guildId)!;
+
+          if (votes.has(interaction.user.id)) {
+            await interaction.reply('❌ You already voted to skip!');
+            return;
+          }
+
+          votes.add(interaction.user.id);
+          const required = 2;
+
+          if (votes.size >= required) {
+            votes.clear();
+            skipVotes.delete(guildId);
+            
+            if (player.queue.tracks.length === 0) {
+              await interaction.reply(`⏭️ Skipped! Queue is empty, stopping playback.`);
+              await player.destroy();
+            } else {
+              skipFlags.set(guildId, true);
+              await player.skip();
+              await interaction.reply(`⏭️ Skipped! (${votes.size}/${required} votes)`);
+            }
+          } else {
+            await interaction.reply(`🗳️ Skip vote registered! (${votes.size}/${required} votes needed)`);
+          }
           break;
 
         case 'queue':
@@ -112,7 +167,7 @@ const client = new Client({
           
           if (queue.tracks.length > 0) {
             queueMsg += `**Up Next:**\n`;
-            queue.tracks.slice(0, 10).forEach((track, i) => {
+            queue.tracks.slice(0, 10).forEach((track: any, i: number) => {
               queueMsg += `${i + 1}. ${track.info.title}\n`;
             });
             if (queue.tracks.length > 10) {
@@ -133,9 +188,8 @@ const client = new Client({
           await interaction.reply('⏹️ Stopped and disconnected!');
           break;
 
-        case 'vote':
         case 'suggest':
-          await interaction.reply('❌ This command is not yet implemented with Lavalink!');
+          await interaction.reply('❌ This command is not yet implemented!');
           break;
       }
     } catch (error) {
