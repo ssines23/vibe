@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Collection } from 'discord.js';
+import { Client, GatewayIntentBits } from 'discord.js';
 import { config } from 'dotenv';
 import { registerCommands } from './commands';
 import { createLavalinkManager } from './music/lavalink-manager';
@@ -38,6 +38,8 @@ const client = new Client({
     if (!guildId) return;
     
     try {
+      let player;
+      
       switch (commandName) {
         case 'play':
           const query = interaction.options.getString('query', true);
@@ -52,7 +54,7 @@ const client = new Client({
           await interaction.deferReply();
 
           // Create or get Lavalink player
-          let player = manager.getPlayer(guildId);
+          player = manager.getPlayer(guildId);
           if (!player) {
             player = manager.createPlayer({
               guildId: guildId,
