@@ -2,14 +2,14 @@ import { LavalinkManager } from 'lavalink-client';
 import { Client } from 'discord.js';
 import { skipVotes } from '../index';
 
-export function createLavalinkManager(client: Client): LavalinkManager {
+export function createLavalinkManager(client: Client, skipFlags: Map<string, boolean>): LavalinkManager {
   const manager = new LavalinkManager({
     nodes: [
       {
         authorization: 'youshallnotpass',
-        host: 'lavalink.jirayu.net',
-        port: 13592,
-        id: 'hosted-node',
+        host: 'localhost',
+        port: 2333,
+        id: 'local-node',
         secure: false,
       },
     ],
@@ -42,7 +42,7 @@ export function createLavalinkManager(client: Client): LavalinkManager {
         const res = await player.search({ query: searchQuery }, { id: 'auto-recommend' });
         
         if (res && res.tracks && res.tracks.length > 0) {
-          const tracksToAdd = res.tracks.slice(0, 5).filter((t: any) => t.info.identifier !== track.info.identifier);
+          const tracksToAdd = res.tracks.slice(0, 1).filter((t: any) => t.info.identifier !== track.info.identifier);
           
           if (tracksToAdd.length > 0) {
             await player.queue.add(tracksToAdd);
@@ -51,24 +51,6 @@ export function createLavalinkManager(client: Client): LavalinkManager {
               console.log(`  ${i + 1}. ${t.info.title} - ${t.info.author}`);
             });
             console.log('');
-            
-            // Send message to Discord channel
-            try {
-              if (!player.textChannelId) return;
-              const channel = await client.channels.fetch(player.textChannelId);
-              if (channel && 'send' in channel) {
-                let msg = `🎵 **Playing next:**\n`;
-                tracksToAdd.slice(0, 3).forEach((t: any, i: number) => {
-                  msg += `${i + 1}. ${t.info.title} - ${t.info.author}\n`;
-                });
-                if (tracksToAdd.length > 3) {
-                  msg += `...and ${tracksToAdd.length - 3} more`;
-                }
-                await channel.send(msg);
-              }
-            } catch (error) {
-              console.error('Error sending recommendation message:', error);
-            }
           }
         }
       } catch (error) {
@@ -81,25 +63,54 @@ export function createLavalinkManager(client: Client): LavalinkManager {
   manager.on('trackStart', async (player, track) => {
     if (!track) return;
     
-    // Send "Now Playing" message
-    try {
-      if (!player.textChannelId) return;
-      const channel = await client.channels.fetch(player.textChannelId);
-      if (channel && 'send' in channel) {
-        await channel.send(`🎵 **Now Playing:** ${track.info.title} - ${track.info.author}`);
+    // Only send "Now Playing" if this wasn't triggered by a skip
+    const wasSkipped = skipFlags.get(player.guildId);
+    if (!wasSkipped) {
+      try {
+        if (!player.textChannelId) return;
+        const channel = await client.channels.fetch(player.textChannelId);
+        if (channel && 'send' in channel) {
+          await channel.send(`🎵 **Now Playing:** ${track.info.title} - ${track.info.author}`);
+        }
+      } catch (error) {
+        console.error('Error sending now playing message:', error);
       }
-    } catch (error) {
-      console.error('Error sending now playing message:', error);
+    } else {
+      // Send "Now Playing" message for skipped tracks
+      try {
+        if (!player.textChannelId) return;
+        const channel = await client.channels.fetch(player.textChannelId);
+        if (channel && 'send' in channel) {
+          await channel.send(`🎵 **Now Playing:** ${track.info.title} - ${track.info.author}`);
+        }
+      } catch (error) {
+        console.error('Error sending now playing message:', error);
+      }
+      // Clear the skip flag after using it
+      skipFlags.delete(player.guildId);
     }
     
-    // Check for auto-recommendations
+    // Always check for auto-recommendations
     await autoRecommend(player, track);
+    
+    // Always show "Next up" after recommendations are added
+    if (player.queue.tracks.length > 0) {
+      try {
+        if (!player.textChannelId) return;
+        const channel = await client.channels.fetch(player.textChannelId);
+        if (channel && 'send' in channel) {
+          const nextTrack = player.queue.tracks[0];
+          await channel.send(`⏭️ **Next up:** ${nextTrack.info.title} - ${nextTrack.info.author}`);
+        }
+      } catch (error) {
+        console.error('Error sending next up message:', error);
+      }
+    }
   });
 
-  // Trigger auto-recommend when track ends
-  manager.on('trackEnd', async (player, track) => {
+  // Clean up skip votes when track ends
+  manager.on('trackEnd', async (player) => {
     skipVotes.delete(player.guildId);
-    await autoRecommend(player, track);
   });
 
   return manager;

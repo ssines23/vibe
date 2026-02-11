@@ -34,7 +34,12 @@ const client = new Client({
   });
 
   client.on('raw', (d) => {
-    if (manager) manager.sendRawData(d);
+    if (manager && manager.nodeManager.nodes.size > 0) {
+      const node = manager.nodeManager.nodes.values().next().value;
+      if (node?.sessionId) {
+        manager.sendRawData(d);
+      }
+    }
   });
 
   client.on('interactionCreate', async (interaction) => {
@@ -57,6 +62,12 @@ const client = new Client({
             return;
           }
 
+          // Check if Lavalink is ready
+          if (!manager.nodeManager.nodes.size || !manager.nodeManager.nodes.values().next().value?.sessionId) {
+            await interaction.reply('❌ Music system is not ready yet. Please try again in a moment.');
+            return;
+          }
+
           await interaction.deferReply();
 
           // Create or get Lavalink player
@@ -66,7 +77,7 @@ const client = new Client({
               guildId: guildId,
               voiceChannelId: voiceChannel.id,
               textChannelId: interaction.channelId,
-              selfDeaf: false,
+              selfDeaf: true,
             });
             await player.connect();
           }
