@@ -2,6 +2,9 @@ import { LavalinkManager } from 'lavalink-client';
 import { Client } from 'discord.js';
 import { skipVotes } from '../index';
 
+// Track auto-recommended tracks per guild
+const autoRecommendedTracks = new Map<string, Set<string>>();
+
 export function createLavalinkManager(client: Client, skipFlags: Map<string, boolean>): LavalinkManager {
   const manager = new LavalinkManager({
     nodes: [
@@ -46,6 +49,15 @@ export function createLavalinkManager(client: Client, skipFlags: Map<string, boo
           
           if (tracksToAdd.length > 0) {
             await player.queue.add(tracksToAdd);
+            
+            // Mark these as auto-recommended
+            if (!autoRecommendedTracks.has(player.guildId)) {
+              autoRecommendedTracks.set(player.guildId, new Set());
+            }
+            tracksToAdd.forEach((t: any) => {
+              autoRecommendedTracks.get(player.guildId)!.add(t.info.identifier);
+            });
+            
             console.log(`\n🎵 Auto-recommendations added (${tracksToAdd.length} tracks):`);
             tracksToAdd.forEach((t: any, i: number) => {
               console.log(`  ${i + 1}. ${t.info.title} - ${t.info.author}`);
@@ -58,6 +70,26 @@ export function createLavalinkManager(client: Client, skipFlags: Map<string, boo
       }
     }
   };
+
+  // Function to clear auto-recommendations and refetch based on last manually added track
+  const refreshRecommendations = async (player: any, newTrack: any) => {
+    if (!player || !newTrack) return;
+    
+    // Remove all auto-recommended tracks from queue
+    const autoTracks = autoRecommendedTracks.get(player.guildId);
+    if (autoTracks && autoTracks.size > 0) {
+      const tracksToKeep = player.queue.tracks.filter((t: any) => !autoTracks.has(t.info.identifier));
+      player.queue.tracks = tracksToKeep;
+      autoRecommendedTracks.delete(player.guildId);
+      console.log(`🗑️ Cleared ${autoTracks.size} auto-recommendations`);
+    }
+    
+    // Fetch new recommendations based on the newly added track
+    await autoRecommend(player, newTrack);
+  };
+
+  // Export the refresh function so it can be called from the play command
+  (manager as any).refreshRecommendations = refreshRecommendations;
 
   // Trigger auto-recommend when track starts
   manager.on('trackStart', async (player, track) => {

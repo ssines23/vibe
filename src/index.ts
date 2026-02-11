@@ -96,6 +96,11 @@ const client = new Client({
           } else {
             await player.queue.add(res.tracks[0]);
             await interaction.editReply(`✅ Added **${res.tracks[0].info.title}** to the queue!`);
+            
+            // Refresh recommendations based on this newly added track
+            if ((manager as any).refreshRecommendations) {
+              await (manager as any).refreshRecommendations(player, res.tracks[0]);
+            }
           }
 
           if (!player.playing) await player.play();
