@@ -18,7 +18,8 @@
   "dependencies": {
     "discord.js": "^14.14.1",
     "dotenv": "^16.4.1",
-    "lavalink-client": "^2.9.0"
+    "lavalink-client": "^2.9.0",
+    "openai": "^6.21.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.5",

@@ -3,7 +3,7 @@ import { Client, REST, Routes, SlashCommandBuilder } from 'discord.js';
 const commands = [
   new SlashCommandBuilder()
     .setName('play')
-    .setDescription('Play a song from Spotify/SoundCloud')
+    .setDescription('Play a song')
     .addStringOption(option =>
       option.setName('query')
         .setDescription('Song name or URL')
@@ -16,6 +16,19 @@ const commands = [
     .addStringOption(option =>
       option.setName('genre')
         .setDescription('Genre name (e.g., jazz, rock, edm)')
+        .setRequired(true)
+    ),
+  
+  new SlashCommandBuilder()
+    .setName('random')
+    .setDescription('Play a random song'),
+  
+  new SlashCommandBuilder()
+    .setName('vibe')
+    .setDescription('Describe a mood or feeling and get matching music')
+    .addStringOption(option =>
+      option.setName('description')
+        .setDescription('Describe the vibe (e.g., "chill summer vibes", "energetic workout music")')
         .setRequired(true)
     ),
   

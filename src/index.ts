@@ -1,10 +1,11 @@
 import { Client, GatewayIntentBits } from 'discord.js';
 import { config } from 'dotenv';
+config(); // Load env first
+
 import { registerCommands } from './commands';
 import { createLavalinkManager } from './music/lavalink-manager';
 import { LavalinkManager } from 'lavalink-client';
-
-config();
+import { getVibeSearchQuery } from './openai-helper';
 
 export let manager: LavalinkManager;
 
@@ -97,8 +98,8 @@ const client = new Client({
             await player.queue.add(res.tracks[0]);
             await interaction.editReply(`✅ Added **${res.tracks[0].info.title}** to the queue!`);
             
-            // Refresh recommendations based on this newly added track
-            if ((manager as any).refreshRecommendations) {
+            // Only refresh recommendations if something is already playing
+            if (player.playing && (manager as any).refreshRecommendations) {
               await (manager as any).refreshRecommendations(player, res.tracks[0]);
             }
           }
@@ -146,9 +147,107 @@ const client = new Client({
           await player.queue.add(genreRes.tracks[0]);
           await interaction.editReply(`✅ Playing ${genre} music: **${genreRes.tracks[0].info.title}**`);
           
-          // Refresh recommendations based on this genre track
-          if ((manager as any).refreshRecommendations) {
+          // Only refresh recommendations if something is already playing
+          if (player.playing && (manager as any).refreshRecommendations) {
             await (manager as any).refreshRecommendations(player, genreRes.tracks[0]);
+          }
+
+          if (!player.playing) await player.play();
+          break;
+
+        case 'random':
+          const randomMember = interaction.member as any;
+          const randomVoiceChannel = randomMember?.voice?.channel;
+
+          if (!randomVoiceChannel) {
+            await interaction.reply('❌ You need to be in a voice channel!');
+            return;
+          }
+
+          if (!manager.nodeManager.nodes.size || !manager.nodeManager.nodes.values().next().value?.sessionId) {
+            await interaction.reply('❌ Music system is not ready yet. Please try again in a moment.');
+            return;
+          }
+
+          await interaction.deferReply();
+
+          player = manager.getPlayer(guildId);
+          if (!player) {
+            player = manager.createPlayer({
+              guildId: guildId,
+              voiceChannelId: randomVoiceChannel.id,
+              textChannelId: interaction.channelId,
+              selfDeaf: true,
+            });
+            await player.connect();
+          }
+
+          // Search for random music - use a random word/genre
+          const randomTerms = ['music', 'song', 'hits', 'popular', 'trending', 'viral', 'top'];
+          const randomTerm = randomTerms[Math.floor(Math.random() * randomTerms.length)];
+          const randomRes = await player.search({ query: randomTerm }, interaction.user);
+          
+          if (!randomRes || !randomRes.tracks || randomRes.tracks.length === 0) {
+            await interaction.editReply(`❌ Couldn't find a random song!`);
+            return;
+          }
+
+          // Pick a random track from the results
+          const randomTrack = randomRes.tracks[Math.floor(Math.random() * randomRes.tracks.length)];
+          await player.queue.add(randomTrack);
+          await interaction.editReply(`🎲 Playing random: **${randomTrack.info.title}**`);
+          
+          // Only refresh recommendations if something is already playing
+          if (player.playing && (manager as any).refreshRecommendations) {
+            await (manager as any).refreshRecommendations(player, randomTrack);
+          }
+
+          if (!player.playing) await player.play();
+          break;
+
+        case 'vibe':
+          const vibeDescription = interaction.options.getString('description', true);
+          const vibeMember = interaction.member as any;
+          const vibeVoiceChannel = vibeMember?.voice?.channel;
+
+          if (!vibeVoiceChannel) {
+            await interaction.reply('❌ You need to be in a voice channel!');
+            return;
+          }
+
+          if (!manager.nodeManager.nodes.size || !manager.nodeManager.nodes.values().next().value?.sessionId) {
+            await interaction.reply('❌ Music system is not ready yet. Please try again in a moment.');
+            return;
+          }
+
+          await interaction.deferReply();
+
+          player = manager.getPlayer(guildId);
+          if (!player) {
+            player = manager.createPlayer({
+              guildId: guildId,
+              voiceChannelId: vibeVoiceChannel.id,
+              textChannelId: interaction.channelId,
+              selfDeaf: true,
+            });
+            await player.connect();
+          }
+
+          // Use OpenAI to convert vibe description to search query
+          const vibeQuery = await getVibeSearchQuery(vibeDescription);
+          const vibeRes = await player.search({ query: vibeQuery }, interaction.user);
+          
+          if (!vibeRes || !vibeRes.tracks || vibeRes.tracks.length === 0) {
+            await interaction.editReply(`❌ Couldn't find music matching that vibe!`);
+            return;
+          }
+
+          await player.queue.add(vibeRes.tracks[0]);
+          await interaction.editReply(`✨ Playing vibe: **${vibeRes.tracks[0].info.title}**\n_Searched for: "${vibeQuery}"_`);
+          
+          // Only refresh recommendations if something is already playing
+          if (player.playing && (manager as any).refreshRecommendations) {
+            await (manager as any).refreshRecommendations(player, vibeRes.tracks[0]);
           }
 
           if (!player.playing) await player.play();
@@ -177,6 +276,12 @@ const client = new Client({
               await interaction.reply(`⏭️ Skipped! Queue is empty, stopping playback.`);
               await player.destroy();
             } else {
+              // Refresh recommendations based on the next track before skipping
+              const nextTrack = player.queue.tracks[0];
+              if (nextTrack && (manager as any).refreshRecommendations) {
+                await (manager as any).refreshRecommendations(player, nextTrack);
+              }
+              
               skipFlags.set(guildId, true);
               await player.skip();
               await interaction.reply(`⏭️ Skipped!`);
@@ -206,6 +311,12 @@ const client = new Client({
               await interaction.reply(`⏭️ Skipped! Queue is empty, stopping playback.`);
               await player.destroy();
             } else {
+              // Refresh recommendations based on the next track before skipping
+              const nextTrack = player.queue.tracks[0];
+              if (nextTrack && (manager as any).refreshRecommendations) {
+                await (manager as any).refreshRecommendations(player, nextTrack);
+              }
+              
               skipFlags.set(guildId, true);
               await player.skip();
               await interaction.reply(`⏭️ Skipped! (${votes.size}/${required} votes)`);

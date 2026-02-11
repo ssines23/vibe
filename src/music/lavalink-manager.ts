@@ -38,36 +38,34 @@ export function createLavalinkManager(client: Client, skipFlags: Map<string, boo
   const autoRecommend = async (player: any, track: any) => {
     if (!track) return;
     
-    // Auto-add recommendations when 3 or fewer tracks in queue
-    if (player.queue.tracks.length <= 3) {
-      try {
-        const searchQuery = `${track.info.author} similar songs`;
-        const res = await player.search({ query: searchQuery }, { id: 'auto-recommend' });
+    // Always auto-add 2 recommendations to keep music playing
+    try {
+      const searchQuery = `${track.info.author} similar songs`;
+      const res = await player.search({ query: searchQuery }, { id: 'auto-recommend' });
+      
+      if (res && res.tracks && res.tracks.length > 0) {
+        const tracksToAdd = res.tracks.slice(0, 2).filter((t: any) => t.info.identifier !== track.info.identifier);
         
-        if (res && res.tracks && res.tracks.length > 0) {
-          const tracksToAdd = res.tracks.slice(0, 1).filter((t: any) => t.info.identifier !== track.info.identifier);
+        if (tracksToAdd.length > 0) {
+          await player.queue.add(tracksToAdd);
           
-          if (tracksToAdd.length > 0) {
-            await player.queue.add(tracksToAdd);
-            
-            // Mark these as auto-recommended
-            if (!autoRecommendedTracks.has(player.guildId)) {
-              autoRecommendedTracks.set(player.guildId, new Set());
-            }
-            tracksToAdd.forEach((t: any) => {
-              autoRecommendedTracks.get(player.guildId)!.add(t.info.identifier);
-            });
-            
-            console.log(`\n🎵 Auto-recommendations added (${tracksToAdd.length} tracks):`);
-            tracksToAdd.forEach((t: any, i: number) => {
-              console.log(`  ${i + 1}. ${t.info.title} - ${t.info.author}`);
-            });
-            console.log('');
+          // Mark these as auto-recommended
+          if (!autoRecommendedTracks.has(player.guildId)) {
+            autoRecommendedTracks.set(player.guildId, new Set());
           }
+          tracksToAdd.forEach((t: any) => {
+            autoRecommendedTracks.get(player.guildId)!.add(t.info.identifier);
+          });
+          
+          console.log(`\n🎵 Auto-recommendations added (${tracksToAdd.length} tracks):`);
+          tracksToAdd.forEach((t: any, i: number) => {
+            console.log(`  ${i + 1}. ${t.info.title} - ${t.info.author}`);
+          });
+          console.log('');
         }
-      } catch (error) {
-        console.error('Error auto-adding tracks:', error);
       }
+    } catch (error) {
+      console.error('Error auto-adding tracks:', error);
     }
   };
 
