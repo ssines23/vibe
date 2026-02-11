@@ -11,8 +11,13 @@ const commands = [
     ),
   
   new SlashCommandBuilder()
-    .setName('skip')
-    .setDescription('Skip the current song'),
+    .setName('genre')
+    .setDescription('Play music by genre')
+    .addStringOption(option =>
+      option.setName('genre')
+        .setDescription('Genre name (e.g., jazz, rock, edm)')
+        .setRequired(true)
+    ),
   
   new SlashCommandBuilder()
     .setName('queue')
@@ -25,15 +30,6 @@ const commands = [
   new SlashCommandBuilder()
     .setName('vote')
     .setDescription('Vote to skip the current song'),
-  
-  new SlashCommandBuilder()
-    .setName('suggest')
-    .setDescription('Suggest a song for voting')
-    .addStringOption(option =>
-      option.setName('song')
-        .setDescription('Song name or URL')
-        .setRequired(true)
-    ),
 ].map(command => command.toJSON());
 
 export async function registerCommands(client: Client) {

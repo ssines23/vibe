@@ -106,6 +106,54 @@ const client = new Client({
           if (!player.playing) await player.play();
           break;
 
+        case 'genre':
+          const genre = interaction.options.getString('genre', true);
+          const genreMember = interaction.member as any;
+          const genreVoiceChannel = genreMember?.voice?.channel;
+
+          if (!genreVoiceChannel) {
+            await interaction.reply('❌ You need to be in a voice channel!');
+            return;
+          }
+
+          if (!manager.nodeManager.nodes.size || !manager.nodeManager.nodes.values().next().value?.sessionId) {
+            await interaction.reply('❌ Music system is not ready yet. Please try again in a moment.');
+            return;
+          }
+
+          await interaction.deferReply();
+
+          player = manager.getPlayer(guildId);
+          if (!player) {
+            player = manager.createPlayer({
+              guildId: guildId,
+              voiceChannelId: genreVoiceChannel.id,
+              textChannelId: interaction.channelId,
+              selfDeaf: true,
+            });
+            await player.connect();
+          }
+
+          // Search for genre music
+          const genreQuery = `${genre} music`;
+          const genreRes = await player.search({ query: genreQuery }, interaction.user);
+          
+          if (!genreRes || !genreRes.tracks || genreRes.tracks.length === 0) {
+            await interaction.editReply(`❌ No ${genre} music found!`);
+            return;
+          }
+
+          await player.queue.add(genreRes.tracks[0]);
+          await interaction.editReply(`✅ Playing ${genre} music: **${genreRes.tracks[0].info.title}**`);
+          
+          // Refresh recommendations based on this genre track
+          if ((manager as any).refreshRecommendations) {
+            await (manager as any).refreshRecommendations(player, genreRes.tracks[0]);
+          }
+
+          if (!player.playing) await player.play();
+          break;
+
         case 'vote':
           player = manager.getPlayer(guildId);
           if (!player || !player.queue.current) {
