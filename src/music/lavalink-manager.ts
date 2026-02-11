@@ -5,6 +5,9 @@ import { skipVotes } from '../index';
 // Track auto-recommended tracks per guild
 const autoRecommendedTracks = new Map<string, Set<string>>();
 
+// Track all played songs per guild to avoid repeats
+const playedTracks = new Map<string, Set<string>>();
+
 export function createLavalinkManager(client: Client, skipFlags: Map<string, boolean>): LavalinkManager {
   const manager = new LavalinkManager({
     nodes: [
@@ -44,7 +47,16 @@ export function createLavalinkManager(client: Client, skipFlags: Map<string, boo
       const res = await player.search({ query: searchQuery }, { id: 'auto-recommend' });
       
       if (res && res.tracks && res.tracks.length > 0) {
-        const tracksToAdd = res.tracks.slice(0, 2).filter((t: any) => t.info.identifier !== track.info.identifier);
+        // Get played tracks for this guild
+        if (!playedTracks.has(player.guildId)) {
+          playedTracks.set(player.guildId, new Set());
+        }
+        const played = playedTracks.get(player.guildId)!;
+        
+        // Filter out current track and already played tracks
+        const tracksToAdd = res.tracks
+          .filter((t: any) => t.info.identifier !== track.info.identifier && !played.has(t.info.identifier))
+          .slice(0, 2);
         
         if (tracksToAdd.length > 0) {
           await player.queue.add(tracksToAdd);
@@ -92,6 +104,12 @@ export function createLavalinkManager(client: Client, skipFlags: Map<string, boo
   // Trigger auto-recommend when track starts
   manager.on('trackStart', async (player, track) => {
     if (!track) return;
+    
+    // Mark this track as played
+    if (!playedTracks.has(player.guildId)) {
+      playedTracks.set(player.guildId, new Set());
+    }
+    playedTracks.get(player.guildId)!.add(track.info.identifier);
     
     // Only send "Now Playing" if this wasn't triggered by a skip
     const wasSkipped = skipFlags.get(player.guildId);
